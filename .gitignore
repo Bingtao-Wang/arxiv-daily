@@ -1,0 +1,16 @@
+node_modules
+.DS_Store
+dist
+.env
+.env.*
+*.key
+credentials*
+shared/static/data/papers.ts
+shared/static/data/papers.ts.*
+*.tsbuildinfo
+work/
+!.env.example
+
+# Keep paper image research copies local; serve images from official arXiv URLs.
+client/public/paper-figures/**
+!client/public/paper-figures/SOURCES.md

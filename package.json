@@ -1,0 +1,35 @@
+{
+  "name": "arxiv-daily",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "fetch:arxiv": "node --env-file-if-exists=.env --import tsx scripts/fetch-arxiv.ts",
+    "check": "tsc -b --pretty false",
+    "test": "tsx --test scripts/*.test.ts client/src/*.test.ts",
+    "fetch:preview": "node --env-file-if-exists=.env --import tsx scripts/fetch-arxiv.ts --dry-run",
+    "validate:data": "tsx scripts/validate-data.ts"
+  },
+  "dependencies": {
+    "fast-xml-parser": "5.11.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router-dom": "7.18.4",
+    "react-markdown": "10.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "@vitejs/plugin-react": "6.1.2"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

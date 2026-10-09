@@ -1,0 +1,45 @@
+.framework-diagram {
+  max-width: 100%;
+  min-width: 0;
+  margin: 24px 0;
+  overflow: hidden;
+  border: 1px solid #dce6f1;
+  border-radius: 12px;
+  background: #fff;
+}
+.framework-diagram__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e8eef5;
+  background: #f6f9fd;
+}
+.framework-diagram__heading strong { color: #233c59; font-size: 15px; line-height: 1.5; }
+.framework-diagram__heading span { color: #71849c; font-size: 11px; }
+.framework-diagram__scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-color: #bacbdd #edf3f9; scrollbar-width: thin; }
+.framework-diagram__scroll:focus-visible { outline-offset: -3px; }
+.framework-diagram__svg { display: block; width: 100%; min-width: 820px; height: auto; max-width: none; background: #fff; font-family: inherit; }
+.framework-diagram__edge { fill: none; stroke: #6383ac; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.framework-diagram__edge-label-bg { fill: #fff; }
+.framework-diagram__edge-label { fill: #506d91; font-size: 11px; font-weight: 600; }
+.framework-diagram__node-background { fill: #f2f7fd; stroke: #b9cfe8; stroke-width: 1.3; }
+.framework-diagram__node-background--alternate { fill: #f2f9f7; stroke: #b7d9cd; }
+.framework-diagram__node { height: 100%; padding: 17px 16px; overflow-wrap: anywhere; }
+.framework-diagram__node-heading { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+.framework-diagram__node-heading > span { display: inline-flex; width: 23px; min-width: 23px; height: 23px; align-items: center; justify-content: center; border-radius: 6px; background: #e2ecf8; color: #517398; font-size: 10px; font-weight: 700; line-height: 23px; }
+.framework-diagram__node-heading strong { color: #254766; font-size: 15px; font-weight: 700; line-height: 1.55; }
+.framework-diagram__node p { margin: 0; color: #5d7086; font-size: 12px; line-height: 1.75; }
+.framework-diagram__caption { padding: 0 20px 17px; color: #63758a; font-size: 12px; line-height: 1.8; }
+.framework-diagram__text { border-top: 1px solid #e8eef5; padding: 14px 20px; background: #fbfcfe; font-size: 12px; line-height: 1.8; }
+.framework-diagram__text summary { width: fit-content; cursor: pointer; color: #3b679c; font-weight: 600; }
+.framework-diagram__text ol, .framework-diagram__text ul { margin: 14px 0 4px; padding-left: 22px; color: #536a83; }
+.framework-diagram__text li { margin: 4px 0; padding-left: 3px; }
+.framework-diagram__text p { margin: 18px 0 0; color: #345370; font-weight: 600; }
+@media (max-width: 600px) {
+  .framework-diagram__heading { padding: 16px; }
+  .framework-diagram__caption { padding-right: 16px; padding-left: 16px; }
+  .framework-diagram__text { padding: 14px 16px; }
+}

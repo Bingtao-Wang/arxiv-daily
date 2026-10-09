@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <title>Synthetic test fixture — not real papers</title>
+  <opensearch:totalResults>2</opensearch:totalResults>
+  <entry>
+    <id>https://arxiv.org/abs/2610.00001v2</id>
+    <title>Fixture: VLA and diffusion-policy manipulation</title>
+    <summary>This synthetic record demonstrates parsing of robot demonstrations and gripper control. It is test data, not a real scientific paper.</summary>
+    <published>2026-10-08T12:00:00Z</published>
+    <updated>2026-10-08T14:00:00Z</updated>
+    <author><name>Fixture Author</name></author>
+    <category term="cs.RO"/>
+  </entry>
+  <entry>
+    <id>https://arxiv.org/abs/2610.00002v1</id>
+    <title>Fixture: Abstract faster forecasts</title>
+    <summary>This synthetic record describes abstract forecasts and faster estimation; it should not match robotics research interests.</summary>
+    <published>2026-10-08T12:00:00Z</published>
+    <author><name>Fixture Author</name></author>
+    <category term="cs.RO"/>
+  </entry>
+</feed>
