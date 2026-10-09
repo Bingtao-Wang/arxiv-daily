@@ -1,0 +1,65 @@
+name: Update and deploy
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 Asia/Shanghai (01:00 UTC); GitHub may delay scheduled jobs.
+    - cron: '0 1 * * *'
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Data stays outside source control; each successful run saves its history.
+      - uses: actions/cache/restore@v4
+        with:
+          path: shared/static/data/papers.ts
+          key: papers-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: papers-
+      - run: npm run fetch:arxiv -- --days 7 --max 1000
+      - run: npm test
+      - name: Build for this Pages repository
+        env:
+          REPOSITORY: ${{ github.event.repository.name }}
+        run: |
+          if [[ "$REPOSITORY" == *.github.io ]]; then
+            export VITE_BASE_PATH=/
+          else
+            export VITE_BASE_PATH="/$REPOSITORY/"
+          fi
+          npm run build
+          cp dist/index.html dist/404.html
+      - uses: actions/cache/save@v4
+        with:
+          path: shared/static/data/papers.ts
+          key: papers-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paper-data-${{ github.run_id }}
+          path: shared/static/data/papers.ts
+          retention-days: 90
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
