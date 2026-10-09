@@ -8,6 +8,8 @@ credentials*
 shared/static/data/papers.ts
 shared/static/data/papers.ts.*
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 work/
 !.env.example
 

@@ -83,6 +83,12 @@ VOMMI 精读特别核对了便携双 RGB 采集与采集时位姿真值监督的
 
 ## 自动更新与托管
 
+### 按需 AI 全文解读
+
+尚无人工精读的论文详情页提供“解读该论文”。只有 GitHub 用户 `Bingtao-Wang` 能发起；所有访客都可以阅读生成完成的公开报告。报告标为**AI 自动生成、未经人工核验**，显示锁定的 arXiv 版本、原文摘录与定位、MFM-VL 实验建议及重绘框架示意；同版本 HTML 中图号、图注、图片地址匹配时才显示自动匹配的官方原图。人工精读始终优先，自动报告不会获得“必看”标记。首页的“已有 AI 解读”和“只看中文解读”筛选会读取公开报告目录。
+
+此功能由 Cloudflare Worker/D1、独立 GitHub Actions 和 OpenAI API 共同提供。Worker 管理 GitHub App 登录、单任务并发、北京时间每日最多 5 篇及报告持久化；Action 优先解析 arXiv HTML，失败时使用 Docling 解析 PDF，再调用 `gpt-6.1-sol`。没有配置 Worker URL 时，页面会显示未配置状态，按钮无法发起任务。部署与密钥设置见 [Worker 部署说明](worker/README.md)；模型/解析实现与开源方案见 [方案清单](docs/open-source.md)。API 凭据和 GitHub App 私钥不得写入网页环境变量或仓库。
+
 `.github/workflows/ci.yml` 在 push/PR 时执行测试和生产构建。
 
 `.github/workflows/update-deploy.yml` 提供手动运行和每天**北京时间 09:00（UTC 01:00）**的定时采集、构建、GitHub Pages 部署。线上优先使用 arXiv 官方 OAI-PMH，失败时回退至官方 Atom API；本地默认顺序相反，可设置 `ARXIV_SOURCE=oai` 调整。两处都失败时不覆盖已有数据。成功部署后，线上页面显示新数据。GitHub 定时任务可能排队延迟，09:00 是启动计划时间，不保证页面在整点完成更新。工作流需推送到 GitHub 默认分支并启用 Pages 后才会定时运行。

@@ -39,6 +39,17 @@ on:
 
 需要离线生成中文标题或解读时，可以把 [Ollama](https://github.com/ollama/ollama)（[MIT 许可证](https://github.com/ollama/ollama/blob/main/LICENSE)）作为本地兼容服务，再由独立脚本写入 `titleZh`、`analysis` 等字段。模型输出必须保留 `sourceAbstract`、`enrichmentStatus` 和 `analysisBasis`，并人工抽查术语；没有可核验全文时，不应把模型推测写成实验结论。模型权重的许可证应按所选模型单独检查。
 
+## 按需全文解读与原图候选
+
+| 方案 | 链接 | 许可证/来源 | 本项目用法与限制 |
+| --- | --- | --- | --- |
+| arXiv 官方 HTML | [论文 HTML 页面](https://arxiv.org/html/2610.09696v1) | arXiv 官方内容，论文原图版权归原权利人 | 首选版本化正文；提取章节、段落、图号、图注与同版本图片地址。原图只链接官方地址。 |
+| Docling | [GitHub](https://github.com/docling-project/docling) · [图像导出示例](https://github.com/docling-project/docling/blob/main/docs/examples/export_figures.py) | MIT（以仓库 LICENSE 为准） | 官方 HTML 缺失时解析版本化 PDF 的文本与页码；PDF 路径不猜测可公开展示的图片 URL。 |
+| PaperQA2 | [GitHub](https://github.com/Future-House/paper-qa) | Apache-2.0（以仓库 LICENSE 为准） | 借鉴科学文献回答中的出处约束；单篇结构化解读不引入整个检索系统。 |
+| PDFFigures2 | [GitHub](https://github.com/allenai/pdffigures2) | Apache-2.0（以仓库 LICENSE 为准） | 可作为 PDF 图与图注配对的后续备选；需要额外 Scala 运行环境，当前不引入。 |
+
+模型输出的结构化字段和原文定位仍须程序校验；图号或同版本地址无法确认时只显示注明为重绘的框架示意图。自动解读与人工精读分开保存，自动内容不获得“必看”标记。
+
 ## 示例数据核验
 
 `shared/static/data/papers.example.ts` 的 6 篇示例均由 [arXiv Atom API 的批量 ID 查询](https://export.arxiv.org/api/query?id_list=2304.13705,2303.04137,2406.09246,2402.10329,2401.02117,2410.24164&max_results=20)核验，保留最初发布日期，并使用核验时最新版摘要（查询时刻：2026-10-09 北京时间）。`sourceAbstract` 保存 API 摘要原文，中文解读均标记 `analysisBasis: 'abstract'`，不能当作全文阅读结论。

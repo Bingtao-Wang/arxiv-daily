@@ -1,0 +1,18 @@
+{
+  "name": "arxiv-daily-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply arxiv-daily-ai --remote"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.45.0"
+  }
+}

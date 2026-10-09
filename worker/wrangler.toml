@@ -1,0 +1,27 @@
+name = "arxiv-daily-ai"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+# Replace after creating the D1 database with `wrangler d1 create arxiv-daily-ai`.
+[[d1_databases]]
+binding = "DB"
+database_name = "arxiv-daily-ai"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+FRONTEND_ORIGIN = "https://bingtao-wang.github.io"
+ALLOWED_ORIGINS = "https://bingtao-wang.github.io"
+GITHUB_APP_ID = "REPLACE_WITH_GITHUB_APP_ID"
+GITHUB_APP_CLIENT_ID = "REPLACE_WITH_GITHUB_APP_CLIENT_ID"
+GITHUB_INSTALLATION_ID = "REPLACE_WITH_GITHUB_INSTALLATION_ID"
+GITHUB_REPOSITORY = "Bingtao-Wang/arxiv-daily"
+GITHUB_WORKFLOW = "generate-reading.yml"
+GITHUB_REF = "main"
+ADMIN_GITHUB_USER_ID = "90967361"
+ADMIN_GITHUB_LOGIN = "Bingtao-Wang"
+
+# Set these as Worker secrets, never in this file:
+# GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY, CALLBACK_SECRET.
