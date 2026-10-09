@@ -6,11 +6,11 @@
 
 | 方案 | 链接 | 许可证/来源 | 取舍 |
 | --- | --- | --- | --- |
-| arXiv 官方 Atom API | [API 手册](https://arxiv.org/help/api/user-manual) · [cs.RO RSS](https://export.arxiv.org/rss/cs.RO) | arXiv 官方服务（按其服务条款使用） | API 可按分类、日期和排序查询；RSS 适合低频回退。生产任务应分页、去重并遵守请求间隔。 |
-| `fast-xml-parser` | [GitHub](https://github.com/NaturalIntelligence/fast-xml-parser) · [npm](https://www.npmjs.com/package/fast-xml-parser) | MIT（以仓库 LICENSE 为准） | Node/TypeScript 原生 XML 解析，适合把 Atom 响应转成 `papers.ts`；需处理 Atom 单条/多条元素形态。 |
+| arXiv 官方 Atom API / OAI-PMH | [API 手册](https://arxiv.org/help/api/user-manual) · [OAI-PMH 帮助](https://info.arxiv.org/help/oa/index.html) | arXiv 官方服务（按其服务条款使用） | Atom API 支持分类、提交日期和排序查询；OAI-PMH 可按学科集合与记录更新日期收集元数据，含原始创建日期。生产任务分页、去重并遵守请求间隔。 |
+| `fast-xml-parser` | [GitHub](https://github.com/NaturalIntelligence/fast-xml-parser) · [npm](https://www.npmjs.com/package/fast-xml-parser) | MIT（以仓库 LICENSE 为准） | Node/TypeScript 原生 XML 解析，把 Atom / OAI-PMH 响应转成 `papers.ts`；需处理单条、多条及分页元素形态。 |
 | `arxiv.py` | [lukasschwab/arxiv.py](https://github.com/lukasschwab/arxiv.py) · [PyPI](https://pypi.org/project/arxiv/) | MIT（以仓库 LICENSE 为准） | Python 客户端自带分页、延迟和重试；如果把更新脚本改成 Python，可减少 API 细节，但会引入 Python 运行时。 |
 
-当前查询 `cs.RO`，并补充 `eess.SY` / `cs.SY` 中包含机器人、机械臂、腿式或轮式平台上下文的论文，覆盖机械臂与轮足机器人＋机械臂的 WBC。按 `submittedDate` 倒序拉取近 7 天并用无版本 arXiv ID 去重。API 日期边界按 UTC 处理，前端展示日期时再统一到项目约定的时区。
+当前查询 `cs.RO`，并补充 `eess.SY` / `cs.SY` 中包含机器人、机械臂、腿式或轮式平台上下文的论文，覆盖机械臂与轮足机器人＋机械臂的 WBC。Atom API 按 `submittedDate` 拉取近 7 天；OAI-PMH 按记录更新日期取回对应集合，再按元数据的原始 `created` 日期筛选近 7 天。两者都用无版本 arXiv ID 去重。日期边界按 UTC 处理，前端展示日期时再统一到项目约定的时区。
 
 ## 相关性筛选
 
@@ -56,7 +56,7 @@ on:
 
 ## 取舍结论
 
-- 小规模每日任务：官方 API + TypeScript `fast-xml-parser` + 关键词规则，依赖最少且可复现。
+- 小规模每日任务：官方 OAI-PMH / Atom API + TypeScript `fast-xml-parser` + 关键词规则，依赖少且可复现。
 - 需要更高召回：在规则命中后可选多语言 sentence-transformers；缓存模型并保留命中证据。
 - 需要 Python 生态：使用 `arxiv.py` 的分页/重试客户端，但不要同时维护两套抓取器。
 - 第三方仓库只作为参考，当前项目不复制其代码、密钥或数据文件。

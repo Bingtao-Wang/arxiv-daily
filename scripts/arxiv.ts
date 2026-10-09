@@ -2,6 +2,8 @@ import { XMLParser, XMLValidator } from 'fast-xml-parser'
 import type { IPaper } from '../shared/types'
 
 export const API_URL = 'https://export.arxiv.org/api/query'
+export const OAI_URL = 'https://oaipmh.arxiv.org/oai'
+const OAI_SETS = ['cs:cs:RO', 'cs:cs:SY', 'eess:eess:SY'] as const
 // Robotics plus robot-specific systems/control papers that may not be cross-listed.
 export const SEARCH_SCOPE = '(cat:cs.RO OR ((cat:eess.SY OR cat:cs.SY) AND (all:robot* OR all:manipulator* OR all:legged OR all:wheeled)))'
 const ARM_TERMS = ['robot arm', 'robotic arm', 'robot manipulator', 'manipulator', 'manipulator arm', 'articulated arm', 'serial manipulator', 'dual arm', 'single arm', 'bimanual', 'legged manipulator', 'quadrupedal manipulator', 'arm equipped', 'arm mounted', 'with an arm', 'with arm']
@@ -83,6 +85,15 @@ function plain(value: unknown): string { return typeof value === 'string' ? valu
 
 export interface ParsedFeed { papers: IPaper[]; totalResults?: number; entryCount: number }
 
+function makePaper(id: string, title: string, abstract: string, authors: string[], date: string, updated?: string): IPaper {
+  const relevance = relevanceFor(title, abstract)
+  return {
+    arxivId: id, title, titleZh: title, summary: abstract, sourceAbstract: abstract, authors, date,
+    score: relevance.score, keywords: relevance.keywords.slice(0, 8), url: `https://arxiv.org/abs/${id}`,
+    enrichmentStatus: 'pending', summaryLanguage: 'en', ...(updated ? { sourceUpdatedAt: updated } : {}),
+  }
+}
+
 export function parseFeed(xml: string, range?: { since: string; until: string }): ParsedFeed {
   const validation = XMLValidator.validate(xml)
   if (validation !== true) throw new Error(`Invalid arXiv XML: ${validation.err.msg}`)
@@ -104,11 +115,7 @@ export function parseFeed(xml: string, range?: { since: string; until: string })
     if (range && (date < range.since || date > range.until)) continue
     const relevance = relevanceFor(title, abstract)
     if (!relevance.relevant) continue
-    papers.push({
-      arxivId: id, title, titleZh: title, summary: abstract, sourceAbstract: abstract, authors, date,
-      score: relevance.score, keywords: relevance.keywords.slice(0, 8), url: `https://arxiv.org/abs/${id}`,
-      enrichmentStatus: 'pending', summaryLanguage: 'en', ...(plain(entry.updated) ? { sourceUpdatedAt: plain(entry.updated) } : {}),
-    })
+    papers.push(makePaper(id, title, abstract, authors, date, plain(entry.updated)))
   }
   const total = Number(document.feed.totalResults)
   return { papers, entryCount: entries.length, ...(Number.isFinite(total) && total >= 0 ? { totalResults: total } : {}) }
@@ -119,7 +126,115 @@ export interface FetchOptions {
   sleep?: (milliseconds: number) => Promise<void>; timeoutMs?: number; retries?: number; minIntervalMs?: number
 }
 
+type OaiAuthor = { forenames?: unknown; keyname?: unknown }
+type OaiRecord = {
+  header?: { identifier?: unknown; '@_status'?: unknown }
+  metadata?: { arXiv?: {
+    id?: unknown; created?: unknown; updated?: unknown; title?: unknown; abstract?: unknown
+    categories?: unknown; authors?: { author?: OaiAuthor | OaiAuthor[] }
+  } }
+}
+
+/** OAI-PMH dates are last-modified dates; keep only papers originally submitted in range. */
+export function parseOaiFeed(xml: string, range: { since: string; until: string }): { papers: IPaper[]; nextToken?: string; recordCount: number } {
+  const validation = XMLValidator.validate(xml)
+  if (validation !== true) throw new Error(`Invalid arXiv OAI XML: ${validation.err.msg}`)
+  const document = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false }).parse(xml) as {
+    'OAI-PMH'?: {
+      error?: { '#text'?: unknown; '@_code'?: unknown } | string
+      ListRecords?: { record?: OaiRecord | OaiRecord[]; resumptionToken?: unknown }
+    }
+  }
+  const envelope = document['OAI-PMH']
+  if (!envelope || typeof envelope !== 'object') throw new Error('arXiv OAI response contains no OAI-PMH envelope')
+  if (envelope.error !== undefined) {
+    const error = envelope.error
+    const code = typeof error === 'string' ? '' : plain(error['@_code'])
+    if (code === 'noRecordsMatch') return { papers: [], recordCount: 0 }
+    throw new Error(`arXiv OAI error ${code || 'unknown'}: ${typeof error === 'string' ? error : plain(error['#text'])}`)
+  }
+  const list = envelope.ListRecords
+  if (!list || typeof list !== 'object') throw new Error('arXiv OAI response contains no ListRecords')
+  const records = asArray(list.record)
+  const papers: IPaper[] = []
+  for (const record of records) {
+    if (record.header?.['@_status'] === 'deleted') continue
+    const metadata = record.metadata?.arXiv
+    const id = canonicalId(plain(metadata?.id))
+    const title = plain(metadata?.title)
+    const abstract = plain(metadata?.abstract)
+    const date = plain(metadata?.created)
+    const updated = plain(metadata?.updated)
+    const authors = asArray(metadata?.authors?.author).map((author) => `${plain(author.forenames)} ${plain(author.keyname)}`.trim()).filter(Boolean)
+    const categoryText = plain(metadata?.categories)
+    const categories = categoryText.split(/\s+/)
+    if (!title || !abstract || !authors.length || !validDate(date) || !categoryText) throw new Error(`Incomplete arXiv OAI record: ${id}`)
+    if (date < range.since || date > range.until) continue
+    const inRobotics = categories.includes('cs.RO')
+    const inSystems = categories.includes('cs.SY') || categories.includes('eess.SY')
+    const robotTerms = /\b(?:robot\w*|manipulator\w*|legged|wheeled)\b/i.test(normaliseText(`${title} ${abstract}`))
+    if (!(inRobotics || (inSystems && robotTerms))) continue
+    papers.push(makePaper(id, title, abstract, authors, date, validDate(updated) ? updated : undefined))
+  }
+  if (!records.length) throw new Error('arXiv OAI response has no records or noRecordsMatch error')
+  const token = list.resumptionToken
+  const nextToken = typeof token === 'string' ? token : token && typeof token === 'object' && '#text' in token ? plain((token as { '#text'?: unknown })['#text']) : ''
+  return { papers, recordCount: records.length, ...(nextToken ? { nextToken } : {}) }
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/** Official OAI-PMH source. Fetch every set before applying the shared candidate cap. */
+export async function fetchOaiPapers(daysBack: number, maxResults: number, overrides: Partial<FetchOptions> = {}): Promise<IPaper[]> {
+  const options: FetchOptions = { days: daysBack, max: maxResults, ...overrides }
+  if (!Number.isInteger(options.max) || options.max < 1 || options.max > 10000) throw new Error('--max must be an integer from 1 to 10000')
+  const range = dateWindow(options.days, options.now)
+  const request = options.request ?? fetch
+  const delay = options.sleep ?? sleep
+  const interval = options.minIntervalMs ?? 3000
+  let lastRequest = 0
+  const candidates = new Map<string, IPaper>()
+  const fetchPage = async (url: string) => {
+    for (let attempt = 0; ; attempt++) {
+      if (lastRequest) await delay(Math.max(0, interval - (Date.now() - lastRequest)))
+      lastRequest = Date.now()
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30000)
+      let retryable = true
+      try {
+        const response = await request(url, { signal: controller.signal, headers: { Accept: 'application/xml', 'User-Agent': 'arxiv-daily/1.0 (robotics and whole-body control research feed)' } })
+        if (!response.ok) {
+          retryable = response.status === 429 || response.status === 408 || response.status >= 500
+          throw new Error(`arXiv OAI returned HTTP ${response.status}`)
+        }
+        return await response.text()
+      } catch (error) {
+        if (!retryable || attempt >= (options.retries ?? 3)) throw error
+        await delay(Math.min(30000, 3000 * 2 ** attempt))
+      } finally { clearTimeout(timeout) }
+    }
+  }
+  for (const set of OAI_SETS) {
+    let nextToken: string | undefined
+    const seenTokens = new Set<string>()
+    do {
+      const params = nextToken
+        ? new URLSearchParams({ verb: 'ListRecords', resumptionToken: nextToken })
+        : new URLSearchParams({ verb: 'ListRecords', metadataPrefix: 'arXiv', set, from: range.since, until: range.until })
+      const page = parseOaiFeed(await fetchPage(`${OAI_URL}?${params}`), range)
+      for (const paper of page.papers) {
+        const previous = candidates.get(paper.arxivId)
+        if (!previous || (paper.sourceUpdatedAt ?? '') > (previous.sourceUpdatedAt ?? '')) candidates.set(paper.arxivId, paper)
+      }
+      nextToken = page.nextToken
+      if (nextToken && seenTokens.has(nextToken)) throw new Error(`arXiv OAI repeated resumption token for ${set}`)
+      if (nextToken) seenTokens.add(nextToken)
+    } while (nextToken)
+  }
+  const ordered = [...candidates.values()].sort((a, b) => b.date.localeCompare(a.date) || b.arxivId.localeCompare(a.arxivId))
+  if (ordered.length > options.max) console.warn(`arXiv OAI found ${ordered.length} candidates, exceeding --max ${options.max}; increase --max to cover the full date window.`)
+  return ordered.slice(0, options.max).filter((paper) => relevanceFor(paper.title, paper.sourceAbstract ?? paper.summary).relevant)
+}
 
 /** Limit applies to API candidates, before relevance filtering. arXiv asks for >= 3 s between calls. */
 export async function fetchPapers(daysBack: number, maxResults: number, overrides: Partial<FetchOptions> = {}): Promise<IPaper[]> {

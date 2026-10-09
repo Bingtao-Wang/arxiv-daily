@@ -27,7 +27,10 @@ jobs:
           path: shared/static/data/papers.ts
           key: papers-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: papers-
-      - run: npm run fetch:arxiv -- --days 7 --max 1000
+      - name: Fetch arXiv metadata
+        env:
+          ARXIV_SOURCE: oai
+        run: npm run fetch:arxiv -- --days 7 --max 1000
       - run: npm test
       - name: Build for this Pages repository
         env:

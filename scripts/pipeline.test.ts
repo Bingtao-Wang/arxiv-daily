@@ -4,15 +4,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import type { IPaper } from '../shared/types'
-import { canonicalId, dateWindow, fetchPapers, parseFeed, relevanceFor } from './arxiv'
+import { canonicalId, dateWindow, fetchOaiPapers, fetchPapers, parseFeed, parseOaiFeed, relevanceFor } from './arxiv'
 import { mergePapers, validateDays, writeDatasetAtomic } from './data'
 import { enrichPaper, ollamaFromEnv, validateEnrichment } from './enrich'
-import { parseArgs, run } from './fetch-arxiv'
+import { parseArgs, run, sourceFromEnv } from './fetch-arxiv'
 
 function entry(id = '2610.00001v2', title = 'VLA for manipulation', published = '2026-10-08T10:00:00Z', summary = 'We learn a diffusion-policy from demonstrations.') {
   return `<entry><id>http://arxiv.org/abs/${id}</id><title>${title}</title><summary>${summary}</summary><published>${published}</published><updated>2026-10-08T12:00:00Z</updated><author><name>Alice Smith</name></author><author><name>Bob Lee</name></author><category term="cs.RO"/></entry>`
 }
 function feed(entries = entry(), total = 1) { return `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"><opensearch:totalResults>${total}</opensearch:totalResults>${entries}</feed>` }
+function oaiRecord(id: string, created: string, categories = 'cs.RO', title = 'Robot arm manipulation', updated = '2026-10-08', abstract = 'We learn a diffusion policy for a robot arm.') {
+  return `<record><header><identifier>oai:arXiv.org:${id}</identifier><datestamp>${updated}</datestamp></header><metadata><arXiv><id>${id}</id><created>${created}</created><updated>${updated}</updated><authors><author><keyname>Smith</keyname><forenames>Alice</forenames></author><author><keyname>Lee</keyname><forenames>Bob</forenames></author></authors><title>${title}</title><categories>${categories}</categories><abstract>${abstract}</abstract></arXiv></metadata></record>`
+}
+function oaiFeed(records: string, token = '') { return `<?xml version="1.0"?><OAI-PMH><ListRecords>${records}${token ? `<resumptionToken>${token}</resumptionToken>` : ''}</ListRecords></OAI-PMH>` }
 function paper(overrides: Partial<IPaper> = {}): IPaper {
   return { arxivId: '2610.00001', title: 'VLA for manipulation', titleZh: 'VLA for manipulation', summary: 'English abstract', sourceAbstract: 'English abstract', date: '2026-10-08', authors: ['Alice'], keywords: ['vla'], score: 14, enrichmentStatus: 'pending', summaryLanguage: 'en', ...overrides }
 }
@@ -96,6 +100,51 @@ test('request timeout retries finitely and rejects without data', async () => {
   assert.equal(attempts, 2)
 })
 
+test('OAI uses original created date and category scope despite newer update dates', () => {
+  const xml = oaiFeed([
+    oaiRecord('2610.00001', '2026-10-08', 'cs.RO'),
+    oaiRecord('2601.00001', '2026-01-01', 'cs.RO'),
+    oaiRecord('2610.00002', '2026-10-08', 'eess.SY', 'Robot arm manipulation'),
+    oaiRecord('2610.00003', '2026-10-08', 'eess.SY', 'Voltage regulator', '2026-10-08', 'We control electrical voltage.'),
+    oaiRecord('2610.00004', '2026-10-08', 'cs.AI', 'Robot arm manipulation'),
+  ].join(''))
+  const parsed = parseOaiFeed(xml, range)
+  assert.deepEqual(parsed.papers.map((item) => item.arxivId), ['2610.00001', '2610.00002'])
+  assert.deepEqual(parsed.papers[0].authors, ['Alice Smith', 'Bob Lee'])
+  assert.equal(parsed.papers[0].date, '2026-10-08')
+  assert.equal(parsed.papers[0].sourceUpdatedAt, '2026-10-08')
+  assert.throws(() => parseOaiFeed('<html>Unavailable</html>', range), /no OAI-PMH/)
+  assert.throws(() => parseOaiFeed(oaiFeed('<record><metadata><arXiv><id>2610.00001</id></arXiv></metadata></record>'), range), /Incomplete/)
+  assert.deepEqual(parseOaiFeed('<OAI-PMH><error code="noRecordsMatch">None</error></OAI-PMH>', range).papers, [])
+  assert.throws(() => parseOaiFeed('<OAI-PMH><error code="badArgument">Bad set</error></OAI-PMH>', range), /badArgument/)
+})
+
+test('OAI fetch paginates all three sets before the shared candidate cap and deduplicates crosslists', async () => {
+  const urls: URL[] = []
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input)); urls.push(url)
+    const set = url.searchParams.get('set')
+    if (set === 'cs:cs:RO') return new Response(oaiFeed(oaiRecord('2610.00001', '2026-10-08'), 'page-two'))
+    if (url.searchParams.get('resumptionToken') === 'page-two') return new Response(oaiFeed(oaiRecord('2610.00002', '2026-10-08')))
+    if (set === 'cs:cs:SY') return new Response(oaiFeed(oaiRecord('2610.00001', '2026-10-08', 'cs.RO cs.SY')))
+    if (set === 'eess:eess:SY') return new Response(oaiFeed(oaiRecord('2610.00003', '2026-10-08', 'eess.SY')))
+    throw new Error(`Unexpected OAI request: ${url}`)
+  }
+  const papers = await fetchOaiPapers(7, 2, { now: new Date('2026-10-08T12:00:00Z'), request, minIntervalMs: 0, sleep: async () => {} })
+  assert.deepEqual(papers.map((item) => item.arxivId), ['2610.00003', '2610.00002'])
+  assert.equal(urls.length, 4)
+  assert.deepEqual(urls.filter((url) => url.searchParams.has('set')).map((url) => url.searchParams.get('set')), ['cs:cs:RO', 'cs:cs:SY', 'eess:eess:SY'])
+  assert.equal(urls[1].searchParams.get('resumptionToken'), 'page-two')
+  assert.equal(urls[0].searchParams.get('from'), '2026-10-02')
+})
+
+test('OAI response errors fail rather than publishing partial data', async () => {
+  const request: typeof fetch = async (input) => new Response(new URL(String(input)).searchParams.get('set') === 'cs:cs:SY'
+    ? '<OAI-PMH><error code="badArgument">Bad set</error></OAI-PMH>'
+    : oaiFeed(oaiRecord('2610.00001', '2026-10-08')))
+  await assert.rejects(fetchOaiPapers(7, 10, { now: new Date('2026-10-08'), request, minIntervalMs: 0, sleep: async () => {} }), /badArgument/)
+})
+
 test('merge preserves historical papers and curated notes while updating source metadata', () => {
   const curated = paper({ arxivId: '2610.00001v1', titleZh: '中文标题', summary: '人工摘要', summaryLanguage: 'zh', analysis: '人工解读', relevance: '人工关联', enrichmentStatus: 'curated' })
   const history = paper({ arxivId: '2609.00001', date: '2026-09-01' })
@@ -116,13 +165,26 @@ test('empty/invalid incoming data cannot overwrite an existing file', async () =
     const output = join(dir, 'papers.ts'), fixture = join(dir, 'empty.xml')
     await writeFile(output, 'DO NOT CHANGE')
     await writeFile(fixture, feed('', 0))
-    await assert.rejects(run({ days: 7, max: 10, dryRun: false, fixture, output, help: false }), /No relevant/)
+    await assert.rejects(run({ days: 7, max: 10, dryRun: false, fixture, output, help: false }), /Transform|Expected/)
     await assert.rejects(writeDatasetAtomic(output, []), /empty/)
     assert.equal(await readFile(output, 'utf8'), 'DO NOT CHANGE')
     assert.throws(() => mergePapers([], []), /No relevant/)
     assert.throws(() => validateDays([{ date: '2026-10-08', papers: [paper({ score: NaN })] }]), /score/)
     assert.throws(() => validateDays([{ date: '2026-10-07', papers: [paper()] }]), /day group/)
     assert.throws(() => validateDays([{ date: '2026-10-07', papers: [] }, { date: '2026-10-08', papers: [paper()] }]), /newest first/)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('a valid no-record publication day retains prior data and its timestamp', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'arxiv-daily-'))
+  try {
+    const output = join(dir, 'papers.ts'), fixture = join(dir, 'empty.xml')
+    await writeDatasetAtomic(output, [{ date: '2026-10-08', papers: [paper()] }])
+    await writeFile(fixture, feed('', 0))
+    const before = await readFile(output, 'utf8')
+    const result = await run({ days: 7, max: 10, dryRun: false, fixture, output, help: false })
+    assert.equal(result.flatMap((day) => day.papers).length, 1)
+    assert.equal(await readFile(output, 'utf8'), before)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 
@@ -162,4 +224,7 @@ test('CLI rejects invalid numeric options and unknown flags', () => {
   assert.throws(() => parseArgs(['--fixture']), /Missing/)
   assert.throws(() => parseArgs(['--wat']), /Unknown/)
   assert.equal(parseArgs(['--days', '3', '--max', '200', '--dry-run']).dryRun, true)
+  assert.equal(sourceFromEnv({}), 'atom')
+  assert.equal(sourceFromEnv({ ARXIV_SOURCE: 'oai' }), 'oai')
+  assert.throws(() => sourceFromEnv({ ARXIV_SOURCE: 'unknown' }), /ARXIV_SOURCE/)
 })
