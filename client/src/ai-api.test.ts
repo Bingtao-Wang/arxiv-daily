@@ -38,6 +38,8 @@ test('only official figure and caption URLs from the report version can appear',
   assert.equal(isVersionedOfficialFigure(report, figure), true)
   assert.equal(isVersionedOfficialFigure(report, { ...figure, sourceImageUrl: 'https://arxiv.org/html/2402.10329v1/x2.png' }), false)
   assert.equal(isVersionedOfficialFigure(report, { ...figure, sourceUrl: 'https://example.com/html/2402.10329v2#S3.F2' }), false)
+  assert.equal(isVersionedOfficialFigure(report, { ...figure, sourceUrl: 'https://arxiv.org/html/2402.10329v2/other#S3.F2' }), false)
+  assert.equal(isVersionedOfficialFigure(report, { ...figure, sourceUrl: 'https://arxiv.org/html/2402.10329v2' }), false)
   assert.equal(isVersionedOfficialFigure(report, { ...figure, sourceImageUrl: 'javascript:alert(1)' }), false)
 })
 

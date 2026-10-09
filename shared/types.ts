@@ -16,6 +16,10 @@ export interface ReadingSection {
   title: string
   content: string
   kind: 'paper' | 'project' | 'limitations'
+  /** Automatic reports use the six reading stops plus experiments, limits and project transfer. */
+  topic?: 'motivation' | 'architecture' | 'training' | 'data' | 'flow' | 'walkthrough' | 'experiments' | 'limitations' | 'project'
+  /** Older human-authored readings predate this field. */
+  coverage?: 'reported' | 'not_reported' | 'analysis'
 }
 
 export interface PaperDiagram {

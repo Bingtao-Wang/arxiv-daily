@@ -47,8 +47,11 @@ on:
 | Docling | [GitHub](https://github.com/docling-project/docling) · [图像导出示例](https://github.com/docling-project/docling/blob/main/docs/examples/export_figures.py) | MIT（以仓库 LICENSE 为准） | 官方 HTML 缺失时解析版本化 PDF 的文本与页码；PDF 路径不猜测可公开展示的图片 URL。 |
 | PaperQA2 | [GitHub](https://github.com/Future-House/paper-qa) | Apache-2.0（以仓库 LICENSE 为准） | 借鉴科学文献回答中的出处约束；单篇结构化解读不引入整个检索系统。 |
 | PDFFigures2 | [GitHub](https://github.com/allenai/pdffigures2) | Apache-2.0（以仓库 LICENSE 为准） | 可作为 PDF 图与图注配对的后续备选；需要额外 Scala 运行环境，当前不引入。 |
+| kelip-paper-reading | [GitHub](https://github.com/skJack/kelip-paper-reading) · [SKILL.md](https://github.com/skJack/kelip-paper-reading/blob/925953b15813f18b25eeb1a1dca9790f54a47498/SKILL.md) | MIT（仓库 `LICENSE`；核对版本 `925953b`） | 借鉴动机、架构、训练、数据、输入输出流、任务推演六站精读和来源区分；它是对话式 Agent 规程，不是网站后端 API，未复制其代码。 |
 
-模型输出的结构化字段和原文定位仍须程序校验；图号或同版本地址无法确认时只显示注明为重绘的框架示意图。自动解读与人工精读分开保存，自动内容不获得“必看”标记。
+新生成的解读按六站加实验、局限、MFM-VL 三阶段迁移组成九个主题。来源解析为官方 HTML 的段落、表格、编号公式建立同版本定位；缺失的训练、数据等信息显示“未报告”，示意数字须标“示意”。PDF 后备仍使用 Docling 页码定位。模型输出的结构化字段和原文摘录仍须程序校验；这不能证明解读事实正确，页面保留“AI 自动生成，未经人工核验”。图号或同版本地址无法确认时只显示注明为重绘的框架示意图。自动解读与人工精读分开保存，自动内容不获得“必看”标记。
+
+未接入 kelip 的自动 LaTeX 拉取、代码浅克隆与 PDF 启发式裁图：一键公开解读需要先验证论文版本、代码归属、裁图结果和公开展示权利，不能把候选材料当作已核验事实。后续若做人工辅助精读，可单独试用其本地脚本并逐张核对图片；当前线上流程不安装 PyMuPDF，也不自动执行论文或第三方仓库代码。
 
 ## 示例数据核验
 

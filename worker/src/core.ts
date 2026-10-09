@@ -73,6 +73,11 @@ function nonempty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+const readingTopics = [
+  'motivation', 'architecture', 'training', 'data', 'flow',
+  'walkthrough', 'experiments', 'limitations', 'project',
+] as const
+
 export function validateReport(report: unknown, version: string): string | null {
   if (!object(report)) return '报告必须是 JSON 对象'
   if (report.sourceVersion !== version) return '报告与任务的 arXiv 版本不一致'
@@ -84,11 +89,20 @@ export function validateReport(report: unknown, version: string): string | null 
     if (fullTextUrl.protocol !== 'https:' || fullTextUrl.hostname !== 'arxiv.org'
       || ![`/html/${version}`, `/pdf/${version}`].includes(fullTextUrl.pathname)) return '报告原文地址不是锁定版本的 arXiv 全文'
   } catch { return '报告原文地址无效' }
-  if (!Array.isArray(report.sections) || report.sections.length === 0) return '缺少论文解读章节'
-  for (const section of report.sections) {
-    if (!object(section) || !nonempty(section.title) || !nonempty(section.content) || !['paper', 'project', 'limitations'].includes(String(section.kind))) return '章节格式错误'
+  if (!Array.isArray(report.sections) || report.sections.length !== readingTopics.length) return '缺少九个必要的论文解读主题'
+  for (const [index, section] of report.sections.entries()) {
+    if (!object(section) || !nonempty(section.title) || !nonempty(section.content)
+      || section.topic !== readingTopics[index]) return '章节主题或顺序错误'
+    const expectedKind = section.topic === 'project' ? 'project' : section.topic === 'limitations' ? 'limitations' : 'paper'
+    if (section.kind !== expectedKind) return '章节类型错误'
     if (!Array.isArray(section.evidence)) return '章节缺少证据列表'
-    if (section.kind !== 'project' && section.evidence.length === 0) return '论文事实章节缺少原文证据'
+    if (section.topic === 'project') {
+      if (section.coverage !== 'analysis' || !['第一阶段', '第二阶段', '第三阶段'].every((name) => (section.content as string).includes(name))) return '项目迁移建议缺少三阶段分析'
+    } else if (section.coverage === 'reported') {
+      if (section.evidence.length === 0) return '论文事实章节缺少原文证据'
+    } else if (section.coverage === 'not_reported') {
+      if (section.evidence.length !== 0 || !(section.content as string).startsWith('未报告：')) return '未报告主题必须明确标注且不得伪造证据'
+    } else return '章节覆盖状态错误'
     for (const evidence of section.evidence) {
       if (!object(evidence) || !nonempty(evidence.locator) || !nonempty(evidence.quote)) return '证据位置或原文摘录缺失'
     }
@@ -111,7 +125,7 @@ export function validateReport(report: unknown, version: string): string | null 
   if (!report.diagram.edges.every((edge) => object(edge) && typeof edge.from === 'string'
     && typeof edge.to === 'string' && edge.from !== edge.to && nodeIds.has(edge.from) && nodeIds.has(edge.to)
     && (edge.label === undefined || (typeof edge.label === 'string' && edge.label.length <= 80)))) return '框架示意图连线格式错误'
-  if (!Array.isArray(report.actionItems) || !report.actionItems.every(nonempty)) return '项目行动建议格式错误'
+  if (!Array.isArray(report.actionItems) || report.actionItems.length < 3 || !report.actionItems.every(nonempty)) return '项目行动建议格式错误'
   if (!Array.isArray(report.sources) || !report.sources.every((source) => object(source) && nonempty(source.label) && nonempty(source.url) && nonempty(source.locator))) return '来源列表格式错误'
   const sourceLocators = new Set<string>()
   for (const source of report.sources) {
@@ -132,7 +146,7 @@ export function validateReport(report: unknown, version: string): string | null 
       const image = new URL(figure.sourceImageUrl)
       const source = new URL(figure.sourceUrl)
       const pathPrefix = `/html/${version}/`
-      if (image.protocol !== 'https:' || source.protocol !== 'https:' || image.hostname !== 'arxiv.org' || source.hostname !== 'arxiv.org' || !image.pathname.startsWith(pathPrefix) || !source.pathname.startsWith(`/html/${version}`)) return '原图不是同版本 arXiv 官方地址'
+      if (image.protocol !== 'https:' || source.protocol !== 'https:' || image.hostname !== 'arxiv.org' || source.hostname !== 'arxiv.org' || !image.pathname.startsWith(pathPrefix) || source.pathname !== `/html/${version}` || !source.hash || source.search) return '原图不是同版本 arXiv 官方地址'
     } catch {
       return '原图地址无效'
     }

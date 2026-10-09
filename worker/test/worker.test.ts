@@ -75,13 +75,18 @@ function exampleReport() {
     mustRead: false, basis: 'full-text',
     titleZh: '论文解读', summaryZh: '完整摘要', sourceVersion: '2402.10329v3', sourceUrl: 'https://arxiv.org/html/2402.10329v3',
     generatedAt: '2026-10-09T00:00:00Z',
-    sections: [{ title: '方法', kind: 'paper', content: '原文证据支撑的方法描述', evidence: [{ locator: 'S2.p1', quote: 'A complete quoted sentence.' }] }],
+    sections: ['motivation', 'architecture', 'training', 'data', 'flow', 'walkthrough', 'experiments', 'limitations', 'project'].map((topic) => ({
+      title: topic, topic, kind: topic === 'project' ? 'project' : topic === 'limitations' ? 'limitations' : 'paper',
+      coverage: topic === 'project' ? 'analysis' : 'reported',
+      content: topic === 'project' ? '第一阶段：桌面机械臂；第二阶段：轮式平台；第三阶段：轮足机械狗加机械臂。' : '原文证据支撑的方法描述',
+      evidence: topic === 'project' ? [] : [{ locator: 'S2.p1', quote: 'A complete quoted sentence.' }],
+    })),
     diagram: { title: '方法框架', caption: '根据论文内容重绘，非论文原图。', nodes: [
       { id: 'a', title: '输入', detail: '图像', column: 0, row: 0 },
       { id: 'b', title: '模型', detail: '策略', column: 1, row: 0 },
       { id: 'c', title: '动作', detail: '机械臂', column: 2, row: 0 },
     ], edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }] },
-    actionItems: ['验证精度'], sources: [{ label: '论文原文', url: 'https://arxiv.org/html/2402.10329v3#S2.p1', locator: 'S2.p1', kind: 'full-text' }],
+    actionItems: ['验证精度', '打通数据链路', '检查轮足全身控制'], sources: [{ label: '论文原文', url: 'https://arxiv.org/html/2402.10329v3#S2.p1', locator: 'S2.p1', kind: 'full-text' }],
     figures: [],
   }
 }
@@ -95,6 +100,9 @@ test('arXiv identifiers, Beijing quota window, and figure version validation', (
   assert.equal(new Date(window.end).toISOString(), '2026-10-09T16:00:00.000Z')
   const report = exampleReport()
   assert.equal(validateReport(report, '2402.10329v3'), null)
+  assert.match(validateReport({ ...report, sections: report.sections.slice(0, -1) }, '2402.10329v3') || '', /九个/)
+  assert.match(validateReport({ ...report, sections: report.sections.map((section, index) => index === 1 ? { ...section, topic: 'data' } : section) }, '2402.10329v3') || '', /主题/)
+  assert.match(validateReport({ ...report, sections: report.sections.map((section, index) => index === 2 ? { ...section, coverage: 'not_reported', evidence: [] } : section) }, '2402.10329v3') || '', /未报告/)
   assert.match(validateReport({ ...report, mustRead: true }, '2402.10329v3') || '', /必看/)
   assert.match(validateReport({ ...report, sourceUrl: 'https://example.com/paper' }, '2402.10329v3') || '', /arXiv/)
   assert.match(validateReport({ ...report, diagram: { ...report.diagram, nodes: report.diagram.nodes.map((node) => ({ ...node, column: 1000 })) } }, '2402.10329v3') || '', /节点/)
@@ -103,6 +111,8 @@ test('arXiv identifiers, Beijing quota window, and figure version validation', (
   assert.match(validateReport({ ...report, diagram: { ...report.diagram, nodes: report.diagram.nodes.map((node) => ({ ...node, column: 0 })) } }, '2402.10329v3') || '', /节点/)
   assert.match(validateReport({ ...report, diagram: { ...report.diagram, edges: [{ from: 'a', to: 'a' }, { from: 'b', to: 'c' }] } }, '2402.10329v3') || '', /连线/)
   report.figures = [{ label: 'Figure 1', title: '架构', caption: '同版本图注', sourceImageUrl: 'https://arxiv.org/html/2402.10329v2/image.png', sourceUrl: 'https://arxiv.org/html/2402.10329v3#S1.F1', matchStatus: 'matched' }] as never[]
+  assert.match(validateReport(report, '2402.10329v3') || '', /同版本/)
+  report.figures = [{ label: 'Figure 1', title: '架构', caption: '同版本图注', sourceImageUrl: 'https://arxiv.org/html/2402.10329v3/image.png', sourceUrl: 'https://arxiv.org/html/2402.10329v3x#S1.F1', matchStatus: 'matched' }] as never[]
   assert.match(validateReport(report, '2402.10329v3') || '', /同版本/)
 })
 

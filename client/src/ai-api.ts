@@ -192,9 +192,9 @@ export function isVersionedOfficialFigure(report: AiReadingReport, figure: AiRea
   const imageUrl = safeExternalUrl(figure.sourceImageUrl)
   const captionUrl = safeExternalUrl(figure.sourceUrl)
   if (figure.matchStatus !== 'matched' || !imageUrl || !captionUrl) return false
-  return [imageUrl, captionUrl].every((url) => {
-    const parsed = new URL(url)
-    return parsed.hostname === 'arxiv.org'
-      && (parsed.pathname === `/html/${report.sourceVersion}` || parsed.pathname.startsWith(`/html/${report.sourceVersion}/`))
-  })
+  const image = new URL(imageUrl)
+  const caption = new URL(captionUrl)
+  return image.hostname === 'arxiv.org' && image.pathname.startsWith(`/html/${report.sourceVersion}/`)
+    && caption.hostname === 'arxiv.org' && caption.pathname === `/html/${report.sourceVersion}`
+    && !!caption.hash && !caption.search
 }

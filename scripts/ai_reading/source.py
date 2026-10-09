@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
+from bs4.element import NavigableString, Tag
 
 
 ARXIV_ID = re.compile(r"^(?:arXiv:)?(?P<id>\d{4}\.\d{4,5})(?:v(?P<version>[1-9]\d*))?$")
@@ -117,6 +118,84 @@ def _validate_body(passages: tuple[Passage, ...]) -> None:
         )
 
 
+def _section_title(element: Tag) -> str:
+    section = element.find_parent("section", class_="ltx_section")
+    if section is None:
+        return "Front matter"
+    heading = section.select_one("h2.ltx_title_section")
+    return _clean(heading.get_text(" ", strip=True)) if heading else section.get("id", "Section")
+
+
+def _math_alttext(value: str) -> str:
+    # LaTeXML's MathML and its annotation are two representations of the same
+    # expression. The alttext is usually the complete one (some MathML omits
+    # leading values), so render only that representation.
+    value = re.sub(r"\\(?:mathrm|mathbf|text)\{([^{}]+)\}", r"\1", value)
+    value = value.replace(r"\!", "").replace(r"\,", " ").replace(r"\;", " ")
+    value = re.sub(r"\\pm(?![A-Za-z])", " ± ", value)
+    value = re.sub(r"\\times(?![A-Za-z])", " × ", value)
+    return _clean(value)
+
+
+def _html_table_text(element: Tag) -> str | None:
+    parts: list[str] = []
+    for node in element.descendants:
+        if isinstance(node, Tag) and node.name == "math":
+            alttext = node.get("alttext")
+            if not isinstance(alttext, str) or not alttext.strip():
+                return None
+            parts.append(_math_alttext(alttext))
+        elif isinstance(node, NavigableString) and node.find_parent("math") is None:
+            parts.append(str(node))
+    return _clean(" ".join(parts))
+
+
+def _html_table_passages(article: Tag, html_url: str) -> list[Passage]:
+    """Keep table values and their headers together at a versioned HTML anchor."""
+    passages: list[Passage] = []
+    for figure in article.select("figure.ltx_table[id]"):
+        caption_tag = figure.select_one("figcaption.ltx_caption")
+        table = figure.select_one("table.ltx_tabular")
+        if caption_tag is None or table is None:
+            continue
+        caption = _html_table_text(caption_tag)
+        rows: list[str] = []
+        complete = True
+        for row in table.select("tr"):
+            cells = row.find_all(["th", "td"], recursive=False)
+            values = [_html_table_text(cell) for cell in cells]
+            if any(value is None for value in values):
+                complete = False
+                break
+            if any(values):
+                rows.append(" | ".join(value or "" for value in values))
+        if not complete or not caption or not rows:
+            continue
+        locator = figure["id"]
+        passages.append(Passage(locator, caption + "\n" + "\n".join(rows),
+                                _section_title(figure) + " · Table", html_url + "#" + locator))
+    return passages
+
+
+def _html_equation_passages(article: Tag, html_url: str) -> list[Passage]:
+    """Use LaTeXML's formula alttext rather than flattened MathML glyphs."""
+    passages: list[Passage] = []
+    for equation in article.select(".ltx_equation[id]"):
+        if equation.find_parent(class_="ltx_equation") is not None:
+            continue
+        formulas = [_clean(math.get("alttext", "")) for math in equation.select("math[alttext]")]
+        formulas = [formula for formula in formulas if formula]
+        if not formulas:
+            continue
+        tag = equation.select_one(".ltx_tag_equation")
+        label = _clean(tag.get_text(" ", strip=True)) if tag else ""
+        locator = equation["id"]
+        text = f"Equation {label}: " + " ".join(formulas)
+        passages.append(Passage(locator, text, _section_title(equation) + " · Equation",
+                                html_url + "#" + locator))
+    return passages
+
+
 def parse_html(html: bytes | str, version: str) -> PaperSource:
     number, parsed_version = split_arxiv_id(version)
     if parsed_version is None:
@@ -154,6 +233,11 @@ def parse_html(html: bytes | str, version: str) -> PaperSource:
             passages.append(Passage(locator, content, section_title, html_url + "#" + locator))
     result_passages = tuple(passages)
     _validate_body(result_passages)
+    # Body completeness must be established by prose before supplementary
+    # structures are added, so a page of equations cannot masquerade as a paper.
+    passages.extend(_html_table_passages(article, html_url))
+    passages.extend(_html_equation_passages(article, html_url))
+    result_passages = tuple(passages)
 
     figures: list[Figure] = []
     for figure in article.select("figure.ltx_figure"):
@@ -199,6 +283,8 @@ def parse_pdf_with_docling(pdf_bytes: bytes, version: str, converter: object | N
 
     pdf_url = f"https://arxiv.org/pdf/{version}"
     passages: list[Passage] = []
+    tables: list[Passage] = []
+    seen_tables: set[tuple[int, str]] = set()
     section = "Front matter"
     heading_count = 0
     try:
@@ -206,6 +292,39 @@ def parse_pdf_with_docling(pdf_bytes: bytes, version: str, converter: object | N
     except AttributeError as exc:
         raise SourceError("Docling did not return structured PDF text") from exc
     for item, _level in items:
+        if type(item).__name__ == "TableItem":
+            provenance = getattr(item, "prov", None) or []
+            pages = {getattr(entry, "page_no", None) for entry in provenance}
+            # A single page anchor cannot accurately locate a table spanning
+            # pages, and Docling sometimes emits tables without provenance.
+            if len(pages) != 1:
+                continue
+            page = next(iter(pages))
+            if type(page) is not int or page < 1:
+                continue
+            try:
+                markdown = item.export_to_markdown(doc=document)
+            except Exception:
+                # A failed optional table export must not invalidate sound
+                # prose extraction or produce a partial table citation.
+                continue
+            if not isinstance(markdown, str) or "\ufffd" in markdown:
+                continue
+            lines = [line.strip() for line in markdown.splitlines() if line.strip()]
+            row_lines = [line for line in lines if line.startswith("|") and line.endswith("|")]
+            if len(row_lines) < 3 or not any(re.fullmatch(r"[|:\-\s]+", line) for line in row_lines):
+                continue
+            value = "\n".join(lines)
+            if any(ord(char) < 32 and char not in "\n\t" for char in value):
+                continue
+            normalized = _clean(value)
+            table_key = (page, normalized)
+            if table_key in seen_tables:
+                continue
+            seen_tables.add(table_key)
+            locator = f"page {page}, table {len(tables) + 1}"
+            tables.append(Passage(locator, value, section + " · Table", pdf_url + f"#page={page}"))
+            continue
         value = _clean(getattr(item, "text", ""))
         if not value:
             continue
@@ -232,7 +351,18 @@ def parse_pdf_with_docling(pdf_bytes: bytes, version: str, converter: object | N
         if seen_last < expected_last - 1:
             raise SourceError("Docling did not extract text through the end of the PDF")
     number, _ = split_arxiv_id(version)
-    return PaperSource(number, version, version, pdf_url, "pdf", result_passages, ())
+    # Docling also emits some captions as standalone TextItems. If a complete
+    # exported table starts with exactly that caption on the same page, retain
+    # only the table evidence to avoid counting the caption twice.
+    table_captions = {
+        (table.url, _clean(table.text.splitlines()[0]))
+        for table in tables if not table.text.startswith("|")
+    }
+    unique_passages = tuple(
+        passage for passage in result_passages
+        if (passage.url, passage.text) not in table_captions
+    )
+    return PaperSource(number, version, version, pdf_url, "pdf", unique_passages + tuple(tables), ())
 
 
 def fetch_paper(arxiv_id: str, supplied_version: str | None = None,
