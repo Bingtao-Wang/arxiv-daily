@@ -4,8 +4,10 @@ import { days, dataInfo } from '../../../shared/static/data'
 import { assessPaper, MIN_READING_SCORE, PROJECT_PROFILE, sortByProjectRelevance } from '../../../shared/project'
 import type { StageId } from '../../../shared/project'
 import { isMustRead } from '../../../shared/reading'
+import { paperFigures } from '../../../shared/static/data/paper-figures'
 import { arxivUrl, labelForDay, normalizedArxivId, translationPending, truncateAuthors } from '../lib'
 import { useFavorites } from '../hooks/useFavorites'
+import { PaperCardFigure } from '../components/PaperCardFigure'
 import type { IDay, IPaper } from '../../../shared/types'
 
 type HomeSort = 'project' | 'newest' | 'oldest'
@@ -23,6 +25,7 @@ function PaperCard({ paper, stage, favorite, onToggle }: {
   const assessment = assessPaper(paper)
   const score = stage === 'all' ? assessment.score : assessment.stages[stage]
   const mustRead = isMustRead(paper)
+  const mainFigure = mustRead ? paperFigures[normalizedArxivId(paper.arxivId)]?.[0] : undefined
   const stageMatches = PROJECT_PROFILE.stages.map((item) => ({ ...item, match: assessment.stageMatches[item.id] }))
     .filter((item) => (item.match.kind === 'direct' || item.match.kind === 'foundation')
       && item.id !== paper.verifiedEmbodiment?.stage)
@@ -40,13 +43,14 @@ function PaperCard({ paper, stage, favorite, onToggle }: {
       {paper.titleZh && paper.titleZh !== paper.title && <p className="paper-card__zh">{paper.titleZh}</p>}
       <div className="tag-list">{paper.verifiedEmbodiment && <span className="stage-chip stage-chip--verified" title={`${paper.verifiedEmbodiment.locator}：${paper.verifiedEmbodiment.detail}`}>{paper.verifiedEmbodiment.label} · 全文核验</span>}{stageMatches.map((item) => <span className={`stage-chip${assessment.primaryStage === item.id ? ' is-primary' : ''}`} key={item.id} title={`${item.name}：${assessment.stages[item.id]} / 100。${assessment.stageReasons[item.id].join('')}`}>{item.match.label}</span>)}{!paper.verifiedEmbodiment && !stageMatches.length && Object.values(assessment.stageMatches).some((match) => match.kind === 'transfer') && <span className="stage-chip">跨阶段方法参考</span>}</div>
       {reason && <p className="recommendation-note">{mustRead ? '必看理由：' : '项目关联：'}{reason}</p>}
+      {mainFigure && <PaperCardFigure figure={mainFigure} detailPath={detailPath} paperTitle={paper.title} />}
       {pending && !mustRead && <p className="translation-note">英文原文 · 待生成中文解读</p>}
       <p className="paper-card__authors" title={paper.authors.join(', ')}>{truncateAuthors(paper.authors)}</p>
       <p id={summaryId} className={`paper-card__summary${expanded || paper.summary.length <= 90 ? ' is-expanded' : ''}`} lang={pending ? 'en' : 'zh-CN'}>{paper.summary}</p>
       {paper.summary.length > 90 && <button className="summary-toggle" type="button" aria-expanded={expanded} aria-controls={summaryId} onClick={() => setExpanded(!expanded)}>{expanded ? '收起摘要' : '展开摘要'}</button>}
       <div className="paper-card__bottom">
         <div className="tag-list">{paper.keywords.map((keyword) => <span className="tag" key={keyword}>{keyword}</span>)}</div>
-        <div className="card-actions"><Link className="read-link" to={detailPath}>{mustRead ? '精读与框架图' : paper.analysis ? '查看解读' : '查看详情'} →</Link><a className="read-link" href={arxivUrl(paper)} target="_blank" rel="noopener noreferrer">原文 ↗</a></div>
+        <div className="card-actions"><Link className="read-link" to={detailPath}>{mustRead ? '精读与原图' : paper.analysis ? '查看解读' : '查看详情'} →</Link><a className="read-link" href={arxivUrl(paper)} target="_blank" rel="noopener noreferrer">原文 ↗</a></div>
       </div>
     </article>
   )
@@ -125,7 +129,7 @@ export function HomePage() {
           <div className="project-profile__top"><div><p className="section-kicker">项目阅读路线</p><h2>固定桌面 → 轮式平台 → 轮足机械狗</h2></div><span className="updated-note">相关性评分 0–100</span></div>
           <p className="project-goal">围绕操作精度、工作空间适配与数据链路打通，构建「数据采集 → 模型训练 → 真机部署」的完整操作能力链路。</p>
           <div className="project-stage-options" aria-label="按项目阶段筛选"><button className={`stage-option${stage === 'all' ? ' is-active' : ''}`} type="button" aria-pressed={stage === 'all'} onClick={() => setStage('all')}><strong>完整路线</strong><span>三阶段综合相关性</span></button>{PROJECT_PROFILE.stages.map((item, index) => <button className={`stage-option${stage === item.id ? ' is-active' : ''}`} type="button" key={item.id} aria-pressed={stage === item.id} onClick={() => setStage(item.id)}><strong>{index + 1}. {item.shortName}</strong><span>{item.description}</span></button>)}</div>
-          <details className="score-guide"><summary>评分依据与必看标准</summary><p>依据论文标题与原始摘要匹配项目需求。列表仅显示综合分至少 50 分的论文；选择阶段后，还要求该阶段分数至少 50 分，并按阶段分排序。分数衡量阅读优先级，不能代替论文质量评审。</p><div className="project-criteria">{PROJECT_PROFILE.criteria.map((criterion) => <p key={criterion.id}><strong>{criterion.name} · {criterion.max} 分</strong><span>{criterion.description}</span></p>)}</div><p>「必看」由项目阅读价值与已完成的详细解析共同确定，包含方法拆解、框架图、项目落地建议和原文依据。</p></details>
+          <details className="score-guide"><summary>评分依据与必看标准</summary><p>依据论文标题与原始摘要匹配项目需求。列表仅显示综合分至少 50 分的论文；选择阶段后，还要求该阶段分数至少 50 分，并按阶段分排序。分数衡量阅读优先级，不能代替论文质量评审。</p><div className="project-criteria">{PROJECT_PROFILE.criteria.map((criterion) => <p key={criterion.id}><strong>{criterion.name} · {criterion.max} 分</strong><span>{criterion.description}</span></p>)}</div><p>「必看」由项目阅读价值与已完成的详细解析共同确定，包含方法拆解、论文原图、项目落地建议和原文依据。</p></details>
         </section>
         {dataInfo.mode === 'sample' && <aside className="data-notice" aria-label="数据说明"><strong>当前为演示样例</strong><p>{dataInfo.note}。这些论文用于展示站点功能，并非今日抓取结果。</p></aside>}
         {dataInfo.mode !== 'sample' && dataInfo.note && <p className="data-notice">{dataInfo.note}</p>}
@@ -150,7 +154,7 @@ export function HomePage() {
               </section>
             })}
       </main>
-      <footer className="site-footer"><p>项目相关性：0–100 分，依据 MFM-VL 三阶段路线评估。必看论文提供详细解析与框架图。</p><p>数据来源：<a href="https://arxiv.org/list/cs.RO/recent" target="_blank" rel="noopener noreferrer">arXiv</a> · 论文事实与项目落地建议在详情中分别标注。</p></footer>
+      <footer className="site-footer"><p>项目相关性：0–100 分，依据 MFM-VL 三阶段路线评估。必看论文提供详细解析与论文原图。</p><p>数据来源：<a href="https://arxiv.org/list/cs.RO/recent" target="_blank" rel="noopener noreferrer">arXiv</a> · 论文事实与项目落地建议在详情中分别标注。</p></footer>
     </div>
   )
 }
