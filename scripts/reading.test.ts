@@ -14,6 +14,9 @@ const expectedDates: Record<string, string> = {
   '2610.09696': '2026-10-07',
   '2610.10465': '2026-10-07',
   '2610.08220': '2026-10-06',
+  '2610.11248': '2026-10-08',
+  '2610.12089': '2026-10-08',
+  '2610.12185': '2026-10-08',
 }
 const flatten = (days: IDay[]) => days.flatMap((day) => day.papers)
 const basePaper = curatedPapers.find((paper) => paper.arxivId === '2304.13705')!
@@ -131,7 +134,7 @@ test('versioned duplicates merge once, select newer source metadata, and preserv
   const merged = mergeCuratedDays(input)
   validateDays(merged)
   assert.deepEqual(input, unchanged, 'Merging must not mutate the fetched dataset')
-  assert.equal(flatten(merged).length, 7)
+  assert.equal(flatten(merged).length, Object.keys(expectedDates).length + 1)
   assert.equal(flatten(merged).filter((paper) => paper.arxivId === basePaper.arxivId).length, 1)
   assert.equal(flatten(merged).find((paper) => paper.arxivId === basePaper.arxivId)!.title, newer.title)
   assert.equal(flatten(merged).find((paper) => paper.arxivId === unrelated.arxivId)!.title, unrelated.title)
@@ -157,7 +160,7 @@ test('regenerating a recent-only dataset does not remove foundational readings o
   const once = mergeCuratedDays([{ date: '2026-10-07', papers: controlOnly }])
   const twice = mergeCuratedDays(once)
   assert.deepEqual(twice, once, 'Applying the review overlay is idempotent')
-  assert.equal(flatten(twice).filter(isMustRead).length, 6)
+  assert.equal(flatten(twice).filter(isMustRead).length, Object.keys(expectedDates).length)
   for (const paper of flatten(twice)) assert.equal(paper.date, expectedDates[paper.arxivId])
 })
 

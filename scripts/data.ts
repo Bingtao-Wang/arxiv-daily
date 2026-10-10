@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { IDay, IPaper } from '../shared/types'
 import { canonicalId, validDate } from './arxiv'
+import { originalDateCorrections } from './original-date-corrections'
 
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
 function strings(value: unknown): value is string[] { return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.trim()) }
@@ -58,13 +59,18 @@ export function groupByDate(papers: IPaper[]): IDay[] {
   return [...groups].map(([date, group]) => ({ date, papers: group }))
 }
 
+function correctOriginalDate(paper: IPaper): IPaper {
+  const date = originalDateCorrections[canonicalId(paper.arxivId)]
+  return date && paper.date !== date ? { ...paper, date } : paper
+}
+
 /** Metadata refresh never removes old history or curated/generated Chinese content. */
 export function mergePapers(previous: IDay[], incoming: IPaper[]): IDay[] {
   if (!incoming.length) throw new Error('No relevant papers found; existing data was not changed')
   validateDays(previous, true)
   incoming.forEach(validatePaper)
   const byId = new Map<string, IPaper>()
-  for (const paper of previous.flatMap((day) => day.papers)) byId.set(canonicalId(paper.arxivId), { ...paper, arxivId: canonicalId(paper.arxivId) })
+  for (const paper of previous.flatMap((day) => day.papers)) byId.set(canonicalId(paper.arxivId), correctOriginalDate({ ...paper, arxivId: canonicalId(paper.arxivId) }))
   const incomingIds = new Set<string>()
   for (const paper of incoming) {
     const id = canonicalId(paper.arxivId)
@@ -79,7 +85,7 @@ export function mergePapers(previous: IDay[], incoming: IPaper[]): IDay[] {
       updated.enrichmentStatus = old.enrichmentStatus === 'generated' ? 'generated' : 'curated'
       delete updated.enrichmentError
     }
-    byId.set(id, updated)
+    byId.set(id, correctOriginalDate(updated))
   }
   const result = groupByDate([...byId.values()])
   validateDays(result)

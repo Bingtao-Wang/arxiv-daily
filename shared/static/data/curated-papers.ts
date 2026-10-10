@@ -1,12 +1,20 @@
 import type { IDay, IPaper, ReadingReport } from '../../types'
 import { controlReadings } from './control-readings'
+import { maniunitPaper } from './maniunit-paper'
+import { maniunitReadings } from './maniunit-reading'
 import { days as exampleDays } from './papers.example'
 import { readings } from './readings'
+import { resettlePaper } from './resettle-paper'
+import { resettleReadings } from './resettle-reading'
+import { simvlaPaper } from './simvla-paper'
+import { simvlaReadings } from './simvla-reading'
 import { vommiPaper } from './vommi-paper'
 import { vommiReadings } from './vommi-reading'
 
 /** Kept outside generated papers.ts so a fetch or a clean clone cannot erase reviews. */
-export const readingReports: Record<string, ReadingReport> = { ...readings, ...controlReadings, ...vommiReadings }
+export const readingReports: Record<string, ReadingReport> = {
+  ...readings, ...controlReadings, ...vommiReadings, ...resettleReadings, ...maniunitReadings, ...simvlaReadings,
+}
 
 const classicIds = new Set(['2304.13705', '2402.10329', '2401.02117'])
 
@@ -65,6 +73,9 @@ export const curatedPapers: IPaper[] = [
   ...exampleDays.flatMap((day) => day.papers).filter((paper) => classicIds.has(paper.arxivId)),
   ...controlPapers,
   vommiPaper,
+  resettlePaper,
+  maniunitPaper,
+  simvlaPaper,
 ]
 
 function paperId(id: string): string {

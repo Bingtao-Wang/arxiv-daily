@@ -126,16 +126,44 @@ export interface FetchOptions {
   sleep?: (milliseconds: number) => Promise<void>; timeoutMs?: number; retries?: number; minIntervalMs?: number
 }
 
-type OaiAuthor = { forenames?: unknown; keyname?: unknown }
+type OaiVersion = { '@_version'?: unknown; date?: unknown }
 type OaiRecord = {
   header?: { identifier?: unknown; '@_status'?: unknown }
-  metadata?: { arXiv?: {
-    id?: unknown; created?: unknown; updated?: unknown; title?: unknown; abstract?: unknown
-    categories?: unknown; authors?: { author?: OaiAuthor | OaiAuthor[] }
+  metadata?: { arXivRaw?: {
+    id?: unknown; version?: OaiVersion | OaiVersion[]; title?: unknown; abstract?: unknown
+    categories?: unknown; authors?: unknown
   } }
 }
 
-/** OAI-PMH dates are last-modified dates; keep only papers originally submitted in range. */
+function oaiVersionDate(value: unknown): string {
+  const text = plain(value)
+  // arXivRaw gives RFC 2822 timestamps such as "Thu, 17 Sep 2026 16:38:37 GMT".
+  const timestamp = Date.parse(text)
+  return text && Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : ''
+}
+
+function oaiAuthors(value: unknown): string[] {
+  const authors = plain(value)
+  const names: string[] = []
+  let start = 0
+  let parentheses = 0
+  for (let index = 0; index < authors.length; index++) {
+    if (authors[index] === '(') parentheses++
+    else if (authors[index] === ')') parentheses = Math.max(0, parentheses - 1)
+    if (parentheses === 0) {
+      const conjunction = authors.slice(index).match(/^\s+and\s+/i)
+      if (authors[index] === ',' || (index > start && conjunction)) {
+        names.push(authors.slice(start, index).trim())
+        index += authors[index] === ',' ? 0 : conjunction![0].length - 1
+        start = index + 1
+      }
+    }
+  }
+  names.push(authors.slice(start).trim())
+  return names.map((name) => name.replace(/^and\s+/i, '').trim()).filter(Boolean)
+}
+
+/** OAI-PMH selects records by modification date; arXivRaw v1 is the original submission date. */
 export function parseOaiFeed(xml: string, range: { since: string; until: string }): { papers: IPaper[]; nextToken?: string; recordCount: number } {
   const validation = XMLValidator.validate(xml)
   if (validation !== true) throw new Error(`Invalid arXiv OAI XML: ${validation.err.msg}`)
@@ -159,22 +187,25 @@ export function parseOaiFeed(xml: string, range: { since: string; until: string 
   const papers: IPaper[] = []
   for (const record of records) {
     if (record.header?.['@_status'] === 'deleted') continue
-    const metadata = record.metadata?.arXiv
+    const metadata = record.metadata?.arXivRaw
     const id = canonicalId(plain(metadata?.id))
     const title = plain(metadata?.title)
     const abstract = plain(metadata?.abstract)
-    const date = plain(metadata?.created)
-    const updated = plain(metadata?.updated)
-    const authors = asArray(metadata?.authors?.author).map((author) => `${plain(author.forenames)} ${plain(author.keyname)}`.trim()).filter(Boolean)
+    const versions = asArray(metadata?.version)
+    const first = versions.find((version) => plain(version['@_version']) === 'v1')
+    const versionDates = versions.map((version) => oaiVersionDate(version.date))
+    const date = oaiVersionDate(first?.date)
+    const updated = versionDates.reduce((latest, submitted) => submitted > latest ? submitted : latest, '')
+    const authors = oaiAuthors(metadata?.authors)
     const categoryText = plain(metadata?.categories)
     const categories = categoryText.split(/\s+/)
-    if (!title || !abstract || !authors.length || !validDate(date) || !categoryText) throw new Error(`Incomplete arXiv OAI record: ${id}`)
+    if (!title || !abstract || !authors.length || !validDate(date) || versionDates.some((submitted) => !validDate(submitted)) || !categoryText) throw new Error(`Incomplete arXiv OAI record: ${id}`)
     if (date < range.since || date > range.until) continue
     const inRobotics = categories.includes('cs.RO')
     const inSystems = categories.includes('cs.SY') || categories.includes('eess.SY')
     const robotTerms = /\b(?:robot\w*|manipulator\w*|legged|wheeled)\b/i.test(normaliseText(`${title} ${abstract}`))
     if (!(inRobotics || (inSystems && robotTerms))) continue
-    papers.push(makePaper(id, title, abstract, authors, date, validDate(updated) ? updated : undefined))
+    papers.push(makePaper(id, title, abstract, authors, date, updated))
   }
   if (!records.length) throw new Error('arXiv OAI response has no records or noRecordsMatch error')
   const token = list.resumptionToken
@@ -220,7 +251,7 @@ export async function fetchOaiPapers(daysBack: number, maxResults: number, overr
     do {
       const params = nextToken
         ? new URLSearchParams({ verb: 'ListRecords', resumptionToken: nextToken })
-        : new URLSearchParams({ verb: 'ListRecords', metadataPrefix: 'arXiv', set, from: range.since, until: range.until })
+        : new URLSearchParams({ verb: 'ListRecords', metadataPrefix: 'arXivRaw', set, from: range.since, until: range.until })
       const page = parseOaiFeed(await fetchPage(`${OAI_URL}?${params}`), range)
       for (const paper of page.papers) {
         const previous = candidates.get(paper.arxivId)

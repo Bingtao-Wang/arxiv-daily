@@ -14,7 +14,9 @@ function entry(id = '2610.00001v2', title = 'VLA for manipulation', published = 
 }
 function feed(entries = entry(), total = 1) { return `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"><opensearch:totalResults>${total}</opensearch:totalResults>${entries}</feed>` }
 function oaiRecord(id: string, created: string, categories = 'cs.RO', title = 'Robot arm manipulation', updated = '2026-10-08', abstract = 'We learn a diffusion policy for a robot arm.') {
-  return `<record><header><identifier>oai:arXiv.org:${id}</identifier><datestamp>${updated}</datestamp></header><metadata><arXiv><id>${id}</id><created>${created}</created><updated>${updated}</updated><authors><author><keyname>Smith</keyname><forenames>Alice</forenames></author><author><keyname>Lee</keyname><forenames>Bob</forenames></author></authors><title>${title}</title><categories>${categories}</categories><abstract>${abstract}</abstract></arXiv></metadata></record>`
+  const versions = `<version version="v1"><date>${new Date(`${created}T12:00:00Z`).toUTCString()}</date></version>`
+    + (updated !== created ? `<version version="v2"><date>${new Date(`${updated}T12:00:00Z`).toUTCString()}</date></version>` : '')
+  return `<record><header><identifier>oai:arXiv.org:${id}</identifier><datestamp>${updated}</datestamp></header><metadata><arXivRaw><id>${id}</id>${versions}<authors>Alice Smith, Bob Lee</authors><title>${title}</title><categories>${categories}</categories><abstract>${abstract}</abstract></arXivRaw></metadata></record>`
 }
 function oaiFeed(records: string, token = '') { return `<?xml version="1.0"?><OAI-PMH><ListRecords>${records}${token ? `<resumptionToken>${token}</resumptionToken>` : ''}</ListRecords></OAI-PMH>` }
 function paper(overrides: Partial<IPaper> = {}): IPaper {
@@ -100,7 +102,7 @@ test('request timeout retries finitely and rejects without data', async () => {
   assert.equal(attempts, 2)
 })
 
-test('OAI uses original created date and category scope despite newer update dates', () => {
+test('OAI uses arXivRaw v1 date and category scope despite newer update dates', () => {
   const xml = oaiFeed([
     oaiRecord('2610.00001', '2026-10-08', 'cs.RO'),
     oaiRecord('2601.00001', '2026-01-01', 'cs.RO'),
@@ -114,9 +116,26 @@ test('OAI uses original created date and category scope despite newer update dat
   assert.equal(parsed.papers[0].date, '2026-10-08')
   assert.equal(parsed.papers[0].sourceUpdatedAt, '2026-10-08')
   assert.throws(() => parseOaiFeed('<html>Unavailable</html>', range), /no OAI-PMH/)
-  assert.throws(() => parseOaiFeed(oaiFeed('<record><metadata><arXiv><id>2610.00001</id></arXiv></metadata></record>'), range), /Incomplete/)
+  assert.throws(() => parseOaiFeed(oaiFeed('<record><metadata><arXivRaw><id>2610.00001</id></arXivRaw></metadata></record>'), range), /Incomplete/)
   assert.deepEqual(parseOaiFeed('<OAI-PMH><error code="noRecordsMatch">None</error></OAI-PMH>', range).papers, [])
   assert.throws(() => parseOaiFeed('<OAI-PMH><error code="badArgument">Bad set</error></OAI-PMH>', range), /badArgument/)
+})
+
+test('OAI arXivRaw excludes old v1 papers revised this week and preserves author affiliations', () => {
+  const revised = `<record><header><identifier>oai:arXiv.org:2609.20659</identifier><datestamp>2026-10-09</datestamp></header><metadata><arXivRaw>
+    <id>2609.20659</id>
+    <version version="v1"><date>Thu, 17 Sep 2026 16:38:37 GMT</date></version>
+    <version version="v2"><date>Thu, 08 Oct 2026 12:57:50 GMT</date></version>
+    <authors>Zimu Han (University A, Lab B), Yiming Zeng, and Hao Dong</authors>
+    <title>HIL-UMI: Human-in-the-Loop Universal Manipulation</title><categories>cs.RO cs.AI</categories>
+    <abstract>We study policy-guided VLA robot manipulation.</abstract>
+    </arXivRaw></metadata></record>`
+  assert.deepEqual(parseOaiFeed(oaiFeed(revised), range).papers, [])
+  const historical = parseOaiFeed(oaiFeed(revised), { since: '2026-09-17', until: '2026-09-17' }).papers[0]
+  assert.equal(historical.date, '2026-09-17')
+  assert.equal(historical.sourceUpdatedAt, '2026-10-08')
+  assert.deepEqual(historical.authors, ['Zimu Han (University A, Lab B)', 'Yiming Zeng', 'Hao Dong'])
+  assert.throws(() => parseOaiFeed(oaiFeed(revised.replace('version="v1"', 'version="v3"')), range), /Incomplete/)
 })
 
 test('OAI fetch paginates all three sets before the shared candidate cap and deduplicates crosslists', async () => {
@@ -136,6 +155,7 @@ test('OAI fetch paginates all three sets before the shared candidate cap and ded
   assert.deepEqual(urls.filter((url) => url.searchParams.has('set')).map((url) => url.searchParams.get('set')), ['cs:cs:RO', 'cs:cs:SY', 'eess:eess:SY'])
   assert.equal(urls[1].searchParams.get('resumptionToken'), 'page-two')
   assert.equal(urls[0].searchParams.get('from'), '2026-10-02')
+  assert.equal(urls[0].searchParams.get('metadataPrefix'), 'arXivRaw')
 })
 
 test('OAI response errors fail rather than publishing partial data', async () => {
@@ -157,6 +177,17 @@ test('merge preserves historical papers and curated notes while updating source 
   assert.equal(result[0].papers[0].summaryLanguage, 'zh')
   assert.equal(result[0].papers[0].sourceAbstract, 'New abstract')
   assert.equal(result[0].papers[0].arxivId, '2610.00001')
+})
+
+test('merge relocates legacy revisions to official v1 dates without losing editorial content', () => {
+  const revised = paper({ arxivId: '2609.20659', date: '2026-10-08', titleZh: '人工标题', analysis: '人工精读', enrichmentStatus: 'curated' })
+  const older = paper({ arxivId: '2609.25562', date: '2026-10-08' })
+  const sameMonth = paper({ arxivId: '2610.04681', date: '2026-10-08' })
+  const result = mergePapers([{ date: '2026-10-08', papers: [revised, older, sameMonth] }], [paper()])
+  assert.deepEqual(result.map((day) => day.date), ['2026-10-08', '2026-10-03', '2026-09-22', '2026-09-17'])
+  assert.deepEqual(result[0].papers.map((item) => item.arxivId), ['2610.00001'])
+  assert.equal(result[3].papers[0].arxivId, '2609.20659')
+  assert.equal(result[3].papers[0].analysis, '人工精读')
 })
 
 test('empty/invalid incoming data cannot overwrite an existing file', async () => {
