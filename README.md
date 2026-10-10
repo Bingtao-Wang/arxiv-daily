@@ -101,7 +101,7 @@ VOMMI 精读特别核对了便携双 RGB 采集与采集时位姿真值监督的
 2. 在 Settings → Pages 将 Source 设为 **GitHub Actions**。
 3. 在 Actions 手动运行 **Update and deploy** 验证第一次部署。
 
-当前 `http://127.0.0.1:5173` 是本机开发站，不会受 GitHub Pages 工作流更新。可执行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/register-daily-update.ps1` 注册 Windows 计划任务 `ArxivDailyUpdate`，每天本机时间 09:00 采集并校验数据；用 `Get-ScheduledTaskInfo -TaskName ArxivDailyUpdate` 检查运行结果。电脑需开机、当前用户已登录并能访问 arXiv；错过时间后任务会在可运行时补跑。页面打开时可刷新查看更新。任务日志保存在 `work/daily-update/`。此任务只更新本地数据文件，不负责保持开发服务器常开。Windows 系统时区需设为 China Standard Time 才对应北京时间。
+当前 `http://127.0.0.1:5173` 是本机开发站，不会受 GitHub Pages 工作流更新。可执行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/register-daily-update.ps1` 注册 Windows 计划任务 `ArxivDailyUpdate`，每天本机时间 09:00 采集并校验数据；用 `Get-ScheduledTaskInfo -TaskName ArxivDailyUpdate` 检查运行结果。该任务默认与线上一样优先使用官方 OAI-PMH；设置 `ARXIV_SOURCE=atom` 可覆盖。电脑需开机、当前用户已登录并能访问 arXiv；错过时间后任务会在可运行时补跑。页面打开时可刷新查看更新。任务日志保存在 `work/daily-update/`。此任务只更新本地数据文件，不负责保持开发服务器常开。Windows 系统时区需设为 China Standard Time 才对应北京时间。
 
 生产数据通过 Actions cache 跨次保留，并作为 90 天 artifact 备份，**不提交到代码仓库**。cache 可能被 GitHub 淘汰，若需永久历史库，应定期下载 artifact 或接入对象存储。抓取失败时工作流失败，已部署站点继续保留上一版。计划任务可能延迟，不承诺准确到分钟。
 

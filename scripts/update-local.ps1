@@ -60,6 +60,9 @@ try {
   $npmPath = (Get-Command npm.cmd -ErrorAction Stop).Source
   Push-Location -LiteralPath $repoRoot
   try {
+    # Match the Pages workflow while still allowing an explicit local override.
+    if (-not $env:ARXIV_SOURCE) { $env:ARXIV_SOURCE = 'oai' }
+    Write-Log "Using arXiv source: $env:ARXIV_SOURCE."
     Invoke-Npm -Label 'fetch' -Arguments @('run', 'fetch:arxiv', '--', '--days', [string]$Days, '--max', [string]$Max)
     Invoke-Npm -Label 'validate' -Arguments @('run', 'validate:data')
   }
