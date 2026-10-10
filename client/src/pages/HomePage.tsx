@@ -40,7 +40,7 @@ function PaperCard({ paper, stage, favorite, aiReady, onToggle }: {
         <span className="project-score" aria-label={`项目相关性 ${score} 分，满分 100 分`}>{score}<small> / 100</small></span>
         <button className="favorite-button" type="button" aria-pressed={favorite} aria-label={`${favorite ? '取消收藏' : '收藏'}：${paper.title}`} onClick={() => onToggle(paper)}>{favorite ? '★ 已收藏' : '☆ 收藏'}</button>
       </div>
-      <div className="paper-card__topline"><span className="paper-card__date">发布于 <time dateTime={paper.date}>{paper.date}</time></span>{mustRead ? <span className="must-read-badge">必看 · 深度解析</span> : aiReady && <span className="ai-report-badge">已有 AI 解读</span>}</div>
+      <div className="paper-card__topline"><span className="paper-card__date">首次提交于 <time dateTime={paper.date}>{paper.date}</time></span>{mustRead ? <span className="must-read-badge">必看 · 深度解析</span> : aiReady && <span className="ai-report-badge">已有 AI 解读</span>}</div>
       <h3 className="paper-card__title"><Link to={detailPath}>{paper.title}</Link></h3>
       {paper.titleZh && paper.titleZh !== paper.title && <p className="paper-card__zh">{paper.titleZh}</p>}
       <div className="tag-list">{paper.verifiedEmbodiment && <span className="stage-chip stage-chip--verified" title={`${paper.verifiedEmbodiment.locator}：${paper.verifiedEmbodiment.detail}`}>{paper.verifiedEmbodiment.label} · 全文核验</span>}{stageMatches.map((item) => <span className={`stage-chip${assessment.primaryStage === item.id ? ' is-primary' : ''}`} key={item.id} title={`${item.name}：${assessment.stages[item.id]} / 100。${assessment.stageReasons[item.id].join('')}`}>{item.match.label}</span>)}{!paper.verifiedEmbodiment && !stageMatches.length && Object.values(assessment.stageMatches).some((match) => match.kind === 'transfer') && <span className="stage-chip">跨阶段方法参考</span>}</div>
@@ -108,6 +108,9 @@ export function HomePage() {
   const selectedStage = PROJECT_PROFILE.stages.find((item) => item.id === stage)
   const mustReadCount = readingPool.filter(isMustRead).length
   const eligibleFavoritesCount = readingPool.filter((paper) => isFavorite(paper.arxivId)).length
+  const latestIncludedDate = useMemo(() => days.flatMap((day) => day.papers)
+    .filter((paper) => assessPaper(paper).score >= MIN_READING_SCORE)
+    .reduce((latest, paper) => paper.date > latest ? paper.date : latest, ''), [])
   const updated = dataInfo.updatedAt ? new Date(dataInfo.updatedAt) : undefined
   const updateLabel = updated && Number.isFinite(updated.getTime()) ? new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', dateStyle: 'medium', timeStyle: 'short',
@@ -115,6 +118,11 @@ export function HomePage() {
 
   useEffect(() => { document.title = 'arXiv Daily · MFM-VL 具身操作论文跟踪' }, [])
   const resetFilters = () => { setQuery(''); setKeyword(''); setStage('all'); setMinimumScore(MIN_READING_SCORE); setOnlyAnalysis(false); setOnlyFavorites(false); setOnlyMustRead(false); setSort('project'); setJumpDate('') }
+  const showNewestPapers = () => {
+    resetFilters()
+    setSort('newest')
+    window.requestAnimationFrame(() => document.getElementById('paper-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
   const renderCard = (paper: IPaper) => <PaperCard key={paper.arxivId} paper={paper} stage={stage} favorite={isFavorite(paper.arxivId)} aiReady={!reportReady(paper.readingReport) && aiReportIds.has(normalizedArxivId(paper.arxivId))} onToggle={toggleFavorite} />
 
   return (
@@ -136,7 +144,15 @@ export function HomePage() {
         </section>
         {dataInfo.mode === 'sample' && <aside className="data-notice" aria-label="数据说明"><strong>当前为演示样例</strong><p>{dataInfo.note}。这些论文用于展示站点功能，并非今日抓取结果。</p></aside>}
         {dataInfo.mode !== 'sample' && dataInfo.note && <p className="data-notice">{dataInfo.note}</p>}
-        {updateLabel && <p className="updated-note">数据更新：{updateLabel}（北京时间）</p>}
+        {dataInfo.mode === 'live' && (updateLabel || latestIncludedDate) && <section className="feed-freshness" aria-label="论文数据时间说明">
+          <div className="feed-freshness__copy">
+            <p className="feed-freshness__label">论文列表时间</p>
+            {updateLabel && <p>最近采集：<time dateTime={dataInfo.updatedAt}>{updateLabel}（北京时间）</time></p>}
+            {latestIncludedDate && <p>最新收录的 50 分以上论文：首次提交于 <time dateTime={latestIncludedDate}>{latestIncludedDate}</time></p>}
+            <small>arXiv /new 按公告日列出论文，本站按首次提交日归档；默认按项目相关性排序。</small>
+          </div>
+          <button type="button" className="feed-freshness__action" onClick={showNewestPapers}>看最新论文 →</button>
+        </section>}
         {storageError && <p className="data-notice storage-warning" role="status">{storageError}</p>}
         {onlyAnalysis && aiReportsLoading && <p className="data-notice" role="status">正在同步已公开的 AI 解读，列表会自动更新。</p>}
         {onlyAnalysis && aiReportsError && <p className="data-notice storage-warning" role="status">暂时无法同步 AI 解读：{aiReportsError}。人工精读与本地中文笔记仍可查看。</p>}
@@ -149,7 +165,7 @@ export function HomePage() {
         </form>
         <div className="filter-summary"><p aria-live="polite">显示 {visiblePapers.length} / {readingPool.length} 篇 {minimumScore} 分以上论文</p><div className="filter-toggles"><label className="analysis-filter"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} />只看收藏</label><label className="analysis-filter"><input type="checkbox" checked={onlyMustRead} onChange={(event) => setOnlyMustRead(event.target.checked)} />只看必看</label><label className="analysis-filter"><input type="checkbox" checked={onlyAnalysis} onChange={(event) => setOnlyAnalysis(event.target.checked)} />只看中文解读</label></div>{(query || keyword || stage !== 'all' || minimumScore !== MIN_READING_SCORE || onlyAnalysis || onlyFavorites || onlyMustRead || sort !== 'project') && <button type="button" className="reset-filters" onClick={resetFilters}>重置筛选</button>}</div>
         {onlyFavorites && <p className="favorites-note">收藏仅保存在此浏览器，不上传服务器。已保存论文会保留内容快照，便于数据更新后继续查阅。</p>}
-        {visiblePapers.length === 0 ? <section className="empty-state"><h2>{onlyFavorites && eligibleFavoritesCount === 0 ? '还没有 50 分以上的收藏论文' : '没有符合条件的论文'}</h2><p>{onlyFavorites && eligibleFavoritesCount === 0 ? '点击符合门槛的论文卡片或详情页的「☆ 收藏」，建立自己的阅读列表。' : '试试更短的关键词，或调整阶段与筛选条件。'}</p><button className="button-link" type="button" onClick={resetFilters}>清除筛选</button></section>
+        <div id="paper-results" className="paper-results">{visiblePapers.length === 0 ? <section className="empty-state"><h2>{onlyFavorites && eligibleFavoritesCount === 0 ? '还没有 50 分以上的收藏论文' : '没有符合条件的论文'}</h2><p>{onlyFavorites && eligibleFavoritesCount === 0 ? '点击符合门槛的论文卡片或详情页的「☆ 收藏」，建立自己的阅读列表。' : '试试更短的关键词，或调整阶段与筛选条件。'}</p><button className="button-link" type="button" onClick={resetFilters}>清除筛选</button></section>
           : sort === 'project' ? <section className="day-section"><div className="day-heading rank-heading"><div><h2>{onlyFavorites ? '我的收藏' : onlyMustRead ? '项目必看' : '项目阅读优先级'}</h2><span>{selectedStage?.name ?? '三阶段综合'} · 全站按相关性降序</span></div><span className="day-count">{visiblePapers.length} 篇</span></div><div className="paper-grid">{visiblePapers.map(renderCard)}</div></section>
             : visibleDays.map((day) => {
               const label = labelForDay(day.date)
@@ -157,7 +173,7 @@ export function HomePage() {
                 <div className="day-heading"><div><h2>{label}</h2>{label !== day.date && <time dateTime={day.date}>{day.date}</time>}</div><span className="day-count">{day.papers.length} 篇</span></div>
                 <div className="paper-grid">{day.papers.map(renderCard)}</div>
               </section>
-            })}
+            })}</div>
       </main>
       <footer className="site-footer"><p>项目相关性：0–100 分，依据 MFM-VL 三阶段路线评估。必看论文提供人工整理的详细解析；AI 解读单独标注。</p><p>数据来源：<a href="https://arxiv.org/list/cs.RO/recent" target="_blank" rel="noopener noreferrer">arXiv</a> · 论文事实与项目落地建议在详情中分别标注。</p></footer>
     </div>

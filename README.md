@@ -93,7 +93,7 @@ VOMMI 精读特别核对了便携双 RGB 采集与采集时位姿真值监督的
 
 `.github/workflows/ci.yml` 在 push/PR 时执行测试和生产构建。
 
-`.github/workflows/update-deploy.yml` 提供手动运行和每天**北京时间 09:00（UTC 01:00）**的定时采集、构建、GitHub Pages 部署。线上优先使用 arXiv 官方 OAI-PMH，失败时回退至官方 Atom API；本地默认顺序相反，可设置 `ARXIV_SOURCE=oai` 调整。两处都失败时不覆盖已有数据。成功部署后，线上页面显示新数据。GitHub 定时任务可能排队延迟，09:00 是启动计划时间，不保证页面在整点完成更新。工作流需推送到 GitHub 默认分支并启用 Pages 后才会定时运行。
+`.github/workflows/update-deploy.yml` 提供手动运行和每天**北京时间 09:00（UTC 01:00）**的定时采集、构建、GitHub Pages 部署；09:17 设有补跑触发，若当天已有成功更新则自动跳过。线上优先使用 arXiv 官方 OAI-PMH，失败时回退至官方 Atom API；本地默认顺序相反，可设置 `ARXIV_SOURCE=oai` 调整。两处都失败时不覆盖已有数据。成功部署后，线上页面显示新数据。GitHub 定时任务可能排队延迟或被丢弃，09:00 是启动计划时间，不保证页面在整点完成更新。工作流需推送到 GitHub 默认分支并启用 Pages 后才会定时运行。
 
 启用步骤：
 

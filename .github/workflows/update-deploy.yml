@@ -2,9 +2,11 @@ name: Update and deploy
 on:
   workflow_dispatch:
   schedule:
-    # 09:00 Asia/Shanghai (01:00 UTC); GitHub may delay scheduled jobs.
+    # 09:00 Asia/Shanghai (01:00 UTC), with a 09:17 retry if no update succeeded.
     - cron: '0 1 * * *'
+    - cron: '17 1 * * *'
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -12,7 +14,33 @@ concurrency:
   group: pages
   cancel-in-progress: false
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decision.outputs.run }}
+    steps:
+      - id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${{ github.event_name }}" != schedule ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          since="$(date -u +'%Y-%m-%dT01:00:00Z')"
+          if runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/update-deploy.yml/runs?per_page=100")"; then
+            if jq -e --arg since "$since" '[.workflow_runs[] | select(.created_at >= $since and .conclusion == "success")] | length > 0' <<< "$runs" >/dev/null; then
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              echo "A successful update already ran today."
+              exit 0
+            fi
+          else
+            echo "Could not check previous runs; proceeding with the update."
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
   build:
+    needs: check
+    if: needs.check.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

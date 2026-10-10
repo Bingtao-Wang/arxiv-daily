@@ -24,12 +24,13 @@
 
 ## 定时与发布
 
-项目的 GitHub Actions 工作流使用 UTC cron；北京时间 09:00 对应 UTC 01:00：
+项目的 GitHub Actions 工作流使用 UTC cron；北京时间 09:00 对应 UTC 01:00，09:17 作为漏跑或失败后的补跑时机。补跑前会查询当天成功运行的记录，已有成功运行时跳过采集和部署：
 
 ```yaml
 on:
   schedule:
     - cron: '0 1 * * *'
+    - cron: '17 1 * * *'
   workflow_dispatch:
 ```
 
