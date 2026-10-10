@@ -71,7 +71,6 @@ jobs:
             export VITE_BASE_PATH="/$REPOSITORY/"
           fi
           npm run build
-          cp dist/index.html dist/404.html
       - uses: actions/cache/save@v4
         with:
           path: shared/static/data/papers.ts
